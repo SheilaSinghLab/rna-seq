@@ -1,6 +1,8 @@
 from os.path import join
+import os
 from snakemake.io import glob_wildcards, expand
 import re
+import datetime
 
 #Defining all relevant paths for analysis
 FASTQ_DIR = 'data/raw_fastq/'
@@ -14,7 +16,8 @@ REF_FLAT = 'data/ref/annotations/Homo_sapiens.GRCh38.Ensembl86.ref_flat.tsv'
 pattern = '([A-Z][a-z]+)_(SS[0-9]{2})_[A-Z]*?_(L[0-9]{3})_(R[0-9])_[0-9]{3}'
 FILES = glob_wildcards(join(FASTQ_DIR,'{sample}.fastq.gz')).sample
 pattern = ('([A-Z][a-z]+)_(SS[0-9]{2})_[A-Z]*?_(L[0-9]{3})_(R[0-9])_[0-9]{3}')
-
+today = datetime.date.today()
+todaystr = today.isoformat()
 #Generating SAMPLES python dictionary with keys=PatientNum, vals=Another dictionary where (Keys = Lane number, Val=file name)
 SAMPLES = {}
 for f in FILES:
@@ -29,13 +32,17 @@ for f in FILES:
 #Rules that don't need to be submitted to a slurm job (Job manager for computer clusters)
 localrules: merge_counts, all, qc_all, metrics_all
 
+try:
+    normMethod = config['nm'].lower()
+    if normMethod != "tmm" and normMethod != "rpkm":
+        normMethod = "tmm"
+except KeyError:
+    normMethod = "tmm"
+
 #Current final output is a count_matrix of all the samples in a given raw folder
 rule all:
-    input: 'data/counts/count_matrix.txt'
-# rule all:
-#     input: 
-#         bam=expand(join(ALIGNED,'{sample}','{sample}_Aligned.sortedByCoord.out.bam'),sample=sorted(list(SAMPLES.keys()))),
-#         counts=expand(join(ALIGNED,'{sample}','{sample}_ReadsPerGene.out.tab'),sample=sorted(list(SAMPLES.keys())))
+    input: 
+        counts = expand('data/counts/count_matrix_norm_{date}.txt', date = todaystr)
 
 #Optional path to generate just quality control metrics
 rule qc_all:
@@ -49,13 +56,14 @@ rule quality_control:
     threads: 4
     shell:"fastqc {input} --outdir ./data/reports"
 
-
 rule trim:
     input:  join(FASTQ_DIR,'{sample}.fastq.gz')
     output: join(CLEAN_DIR,'{sample}_clean.fq')
-    threads: 4
-    shell: "bbduk.sh -Xmx1g in={input} out={output} ref=adapters/adapters.fa ktrim=r k=23 mink=11 hdist=1 qtrim=r trimq=10 minlen=32 tpe tbo"
-
+    resources: cpus=4, mem_mb=4000
+    shell: 
+        "module load bbmap\n"
+        "bbduk.sh -Xmx1g in={input} out={output} ref=adapters/adapters.fa ktrim=r k=23 mink=11 hdist=1 qtrim=r trimq=10 minlen=32 tpe tbo\n"
+        "module unload bbmap"
 rule star_align:
     input:
         fq_l1 =lambda wildcards: join(CLEAN_DIR, SAMPLES[wildcards.sample]['L001'])+ '_clean.fq',
@@ -64,10 +72,11 @@ rule star_align:
     output: 
         bam = join(ALIGNED,'{sample}','{sample}_Aligned.sortedByCoord.out.bam'),
         counts =join(ALIGNED,'{sample}',"{sample}_ReadsPerGene.out.tab")
-    threads:20
+    resources: cpus=20, time_min=60, mem_mb=35000
     #log:join(ALIGNED, 'SS01','star.map.log')
     params:fq = lambda wildcards: ",".join(expand(join(CLEAN_DIR,'{sample}_clean.fq'), sample=SAMPLES))
     shell: 
+        'module load star\n'
         'STAR --runThreadN 20'
         ' --genomeDir {input.fa}' 
         ' --readFilesIn {input.fq_l1},{input.fq_l2}'
@@ -75,12 +84,13 @@ rule star_align:
         ' --outSAMtype BAM SortedByCoordinate'
         ' --outFileNamePrefix ./data/aligned/{wildcards.sample}/{wildcards.sample}_'
         ' --quantMode GeneCounts'
-        ' --sjdbGTFfile ./data/ref/annotations/Homo_sapiens.GRCh38.Ensembl86.gtf'
+        ' --sjdbGTFfile ./data/ref/annotations/Homo_sapiens.GRCh38.Ensembl86.gtf\n'
+        'module unload star'
 
 rule merge_counts:
     input:
         counts=expand(join(ALIGNED,'{sample}','{sample}_ReadsPerGene.out.tab'), sample=sorted(list(SAMPLES.keys())))
-    output:'data/counts/count_matrix.txt'
+    output:expand('data/counts/count_matrix_{date}.txt', date=todaystr)
     shell: "python scripts/merge_counts.py {output} {input}"
 
 rule rna_metrics:
@@ -98,3 +108,18 @@ rule rna_metrics:
 
 rule metrics_all:
     input: expand(join(ALIGNED,'{sample}','{sample}_RNA_Metrics'), sample=sorted(list(SAMPLES.keys())))
+
+# rule that takes all counts and produces normalized counts by TPM
+rule normalize:
+    input:
+         counts = expand('data/counts/count_matrix_{date}.txt',date=todaystr),
+         rFile = 'scripts/normalize.R'
+    output: expand('data/counts/count_matrix_norm_{date}.txt',date=todaystr)
+    shell:
+        '''
+        module load gcc/7.3.0 r/3.6.0 r-bundle-bioconductor/3.9
+        echo normalizing {input.counts} to create {output}
+        Rscript {input.rFile} {normMethod} {input.counts} {output}
+        module purge
+        '''
+
