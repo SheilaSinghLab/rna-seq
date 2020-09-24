@@ -9,7 +9,7 @@ FASTQ_DIR = 'data/raw_fastq/'
 CLEAN_DIR = 'data/clean_fastq/'
 ALIGNED = 'data/aligned/'
 QC_DIR = 'data/reports/'
-COUNTS_DIR = 'data/counts'
+COUNTS_DIR = 'data/counts/'
 PATH_TO_GENOME = 'data/ref/Ensembl86.sjdbOverhang49'
 REF_FLAT = 'data/ref/annotations/Homo_sapiens.GRCh38.Ensembl86.ref_flat.tsv'
 
@@ -62,7 +62,7 @@ rule star_align:
     output: 
         bam = join(ALIGNED,'{sample}_{subj}_Aligned.sortedByCoord.out.bam'),
         counts =join(ALIGNED,'{sample}_{subj}_ReadsPerGene.out.tab')
-    resources: cpus=20, time_min=60, mem_mb=35000
+    resources: cpus=20, time_min=20, mem_mb=35000
     #log:join(ALIGNED, 'SS01','star.map.log')
     #params:fq = lambda wildcards: ",".join(expand(join(CLEAN_DIR,'{sample}_clean.fq'), sample=SAMPLES))
     shell: 
@@ -72,7 +72,7 @@ rule star_align:
         ' --readFilesIn {input.fq_l1},{input.fq_l2}'
         ' --outSAMstrandField intronMotif'
         ' --outSAMtype BAM SortedByCoordinate'
-        ' --outFileNamePrefix ./data/aligned/{wildcards.sample}/{wildcards.sample}_'
+        ' --outFileNamePrefix ./data/aligned/{wildcards.sample}_{wildcards.subj}_'
         ' --quantMode GeneCounts'
         ' --sjdbGTFfile ./data/ref/annotations/Homo_sapiens.GRCh38.Ensembl86.gtf\n'
         'module unload star'

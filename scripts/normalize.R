@@ -80,4 +80,4 @@ if(normMethod == "tmm"){
 
 # applying the new data to the original chart, saving to text file
 normData[,firstCol:ncol(normData)] <- normCounts
-write.table(normData, file = outFilePath, sep = "\t", row.names = FALSE)
+write.table(normData, file = outFilePath, sep = "\t", row.names = FALSE, quote=FALSE)
