@@ -14,21 +14,24 @@ PATH_TO_GENOME = 'data/ref/Ensembl86.sjdbOverhang49'
 REF_FLAT = 'data/ref/annotations/Homo_sapiens.GRCh38.Ensembl86.ref_flat.tsv'
 
 #Regular expression to find patterns of file sample names 
-pattern = '(.+)_([A-Z][a-z]+)_(SS[0-9]{2})_[A-Z]*?_(L[0-9]{3})_(R[0-9])_[0-9]{3}'
+pattern = '(.*)_([A-Z][a-z]+)_(SS[0-9]{2})_[A-Z]*?_?(L[0-9]{3})_(R[0-9])_[0-9]{3}'
 FILES = glob_wildcards(join(FASTQ_DIR,'{sample}.fastq.gz')).sample
 #Generating SAMPLES python dictionary with keys=PatientNum, vals=Another dictionary where (Keys = Lane number, Val=file name)
 SAMPLES ={}
 for f in FILES:
-    m = re.search(pattern, f)
-    if m:
-        try:
-            SAMPLES[m.group(1)][m.group(3)].append(f)
-        except KeyError:
+    if f.startswith('.'):
+        pass
+    else: 
+        m = re.search(pattern, f)
+        if m:
             try:
-                SAMPLES[m.group(1)][m.group(3)] = [f]
+                SAMPLES[m.group(1)][m.group(3)].append(f)
             except KeyError:
-                SAMPLES[m.group(1)] = {}
-                SAMPLES[m.group(1)][m.group(3)] = [f]
+                try:
+                    SAMPLES[m.group(1)][m.group(3)] = [f]
+                except KeyError:
+                    SAMPLES[m.group(1)] = {}
+                    SAMPLES[m.group(1)][m.group(3)] = [f]
 
 #Rules that don't need to be submitted to a slurm job (Job manager for computer clusters)
 localrules: merge_counts, all, qc_all, metrics_all
@@ -110,20 +113,29 @@ rule quality_control:
         html=join(QC_DIR, '{files}_fastqc.html'),
         z=join(QC_DIR, '{files}_fastqc.zip')
     threads: 4
-    shell:"fastqc {input} --outdir ./data/reports"
+    shell:'''
+    module load fastqc
+    fastqc {input} --outdir ./data/reports
+    module unload fastqc
+    '''
 
+ALIGNED_FILES = glob_wildcards(join(ALIGNED,'{sample}_Aligned.sortedByCoord.out.bam')).sample
 rule metrics_all:
-    input: expand(join(ALIGNED,'{sample}_RNA_Metrics'), sample=sorted(list(SAMPLES.keys())))
+    input: expand(join(QC_DIR, '{sample}_RNA_Metrics'), sample=ALIGNED_FILES)
 
 rule rna_metrics:
     input:
         bam=join(ALIGNED,'{sample}_Aligned.sortedByCoord.out.bam'),
         ref=REF_FLAT
-    output:join(ALIGNED,'{sample}_RNA_Metrics')
+    output:
+        metrics = join(QC_DIR,'{sample}_RNA_Metrics'),
     threads:4
     shell:
-        '''java -jar $EBROOTPICARD/picard.jar CollectRnaSeqMetrics \
+        '''
+        module load picard
+        java -jar $EBROOTPICARD/picard.jar CollectRnaSeqMetrics \
         I={input.bam} \
         O={output} \
         REF_FLAT={input.ref} \
-        STRAND=FIRST_READ_TRANSCRIPTION_STRAND'''
+        STRAND=FIRST_READ_TRANSCRIPTION_STRAND
+        module unload picard'''
