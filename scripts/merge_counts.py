@@ -1,9 +1,10 @@
 import sys
 import re
 import pandas as pd
+import os
 num_files = len(sys.argv)
 files = sys.argv[2:]
-pattern = '(SS[0-9]{2})_ReadsPerGene.out.tab'
+pattern = 'data/aligned/(.*)_ReadsPerGene.out.tab'
 path = './data/ref/annotations/protein_coding.txt'
 counts = {}
 genes = []
@@ -25,4 +26,10 @@ df = df[['genes']+samples]
 df_pc = pd.read_csv(path,sep='\t')
 merged_inner = pd.merge(left=df, right=df_pc, how='right',left_on='genes', right_on='gene_id')
 merged = merged_inner[['gene_id','gene_name']+samples]
-merged.to_csv(sys.argv[1], header=True, index=False, sep='\t', mode='a')
+
+if os.path.isfile(sys.argv[1]):
+    existing = pd.read_csv(sys.argv1, sep='\t')
+    merged = pd.merge(left=existing, right=merged[['gene_id']+samples], how='right',left_on='gene_id',right_on='gene_id')
+    merged.to_csv(sys.argv[1],header=True,index=False,sep='\t',mode='a')
+else:
+    merged.to_csv(sys.argv[1], header=True, index=False, sep='\t', mode='a')

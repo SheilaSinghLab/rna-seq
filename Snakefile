@@ -4,6 +4,11 @@ from snakemake.io import glob_wildcards, expand
 import re
 import datetime
 
+#if paired reads
+try:
+    paired = config['paired']
+except KeyError:
+    paired=False
 #Defining all relevant paths for analysis
 FASTQ_DIR = 'data/raw_fastq/'
 CLEAN_DIR = 'data/clean_fastq/'
@@ -14,7 +19,7 @@ PATH_TO_GENOME = 'data/ref/Ensembl86.sjdbOverhang49'
 REF_FLAT = 'data/ref/annotations/Homo_sapiens.GRCh38.Ensembl86.ref_flat.tsv'
 
 #Regular expression to find patterns of file sample names 
-pattern = '(.*)_([A-Z][a-z]+)_(SS[0-9]{2})_[A-Z]*?_?(L[0-9]{3})_(R[0-9])_[0-9]{3}'
+pattern = '(.*)_([A-Z][a-z]+)_(.*)_[A-Z]*?_?(L[0-9]{3})_(R[0-9])_[0-9]{3}'
 FILES = glob_wildcards(join(FASTQ_DIR,'{sample}.fastq.gz')).sample
 #Generating SAMPLES python dictionary with keys=PatientNum, vals=Another dictionary where (Keys = Lane number, Val=file name)
 SAMPLES ={}
@@ -47,15 +52,28 @@ except KeyError:
 rule all:
     input: 
         counts = expand(join(COUNTS_DIR,'{sample}_count_matrix_norm.txt'), sample=list(SAMPLES.keys()))
-
-rule trim:
-    input:  join(FASTQ_DIR,'{sample}.fastq.gz')
-    output: join(CLEAN_DIR,'{sample}_clean.fq')
-    resources: cpus=4, mem_mb=4000
-    shell: 
-        "module load bbmap\n"
-        "bbduk.sh -Xmx1g in={input} out={output} ref=adapters/adapters.fa ktrim=r k=23 mink=11 hdist=1 qtrim=r trimq=10 minlen=32 tpe tbo\n"
-        "module unload bbmap"
+if paired:
+    rule trim:
+        input:  
+            R1 = lambda wildcards: join(FASTQ_DIR, SAMPLES[wildcards.sample][wildcards.subj][0])+ 'fastq.gz',
+            R2 = lambda wildcards: join(FASTQ_DIR, SAMPLES[wildcards.sample][wildcards.subj][1])+ 'fastq.gz'
+        output:
+            R1 = join(CLEAN_DIR,'{sample}_Singh_{subj}_{lane}_R1_{trail}_clean.fq'),
+            R2 = join(CLEAN_DIR,'{sample}_Singh_{subj}_{lane}_R2_{trail}_clean.fq')
+        resources: cpus=4, mem_mb=4000
+        shell: 
+            "module load bbmap\n"
+            "bbduk.sh -Xmx1g in={input.R1},{input.R2} out={output.R1},{output.R2} ref=adapters/adapters.fa ktrim=r k=23 mink=11 hdist=1 qtrim=r trimq=10 minlen=32 tpe tbo\n"
+            "module unload bbmap"
+else:
+    rule trim:
+        input:  join(FASTQ_DIR,'{sample}.fastq.gz')
+        output: join(CLEAN_DIR,'{sample}_clean.fq')
+        resources: cpus=4, mem_mb=4000
+        shell: 
+            "module load bbmap\n"
+            "bbduk.sh -Xmx1g in={input} out={output} ref=adapters/adapters.fa ktrim=r k=23 mink=11 hdist=1 qtrim=r trimq=10 minlen=32 tpe tbo\n"
+            "module unload bbmap"
 rule star_align:
     input:
         #Output determines the available wildcards for input to play with. As below, sample and subj are available and each contain the appropriate exp and subject number. 
@@ -65,7 +83,7 @@ rule star_align:
     output: 
         bam = join(ALIGNED,'{sample}_{subj}_Aligned.sortedByCoord.out.bam'),
         counts =join(ALIGNED,'{sample}_{subj}_ReadsPerGene.out.tab')
-    resources: cpus=20, time_min=20, mem_mb=35000
+    resources: cpus=20, time_min=35, mem_mb=35000
     #log:join(ALIGNED, 'SS01','star.map.log')
     #params:fq = lambda wildcards: ",".join(expand(join(CLEAN_DIR,'{sample}_clean.fq'), sample=SAMPLES))
     shell: 
