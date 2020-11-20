@@ -1,0 +1,44 @@
+#Author: Omri Nachmani
+#Description: Analysis pipeline for RNAseq count matrices 
+#Execution example: snakemake -s post_Snakefile -j1 --config b=True n=50
+from os.path import join
+import os
+from snakemake.io import glob_wildcards, expand
+import re
+import datetime
+
+COUNTS_DIR = 'data/counts/'
+ANALYSIS_DIR = 'analysis/'
+
+
+FILES = glob_wildcards(join(COUNTS_DIR, '{sample}_count_matrix.txt')).sample
+print(FILES)
+#find command line arguments 
+try:
+    #use bayesian model fitting , boolean True/False or T/F or TRUE/FALSE
+    bayes = bool(config['b'])
+except KeyError:
+    bayes = 'False' 
+
+try:
+    #number of top hit differnetial expression genes to save, use Inf for all 
+    num_genes = int(config['n'])
+except KeyError:
+    num_genes='20'
+
+
+rule all:
+    input:expand(join(ANALYSIS_DIR,'{sample}','{sample}_DE_hits.txt'), sample=FILES)
+
+rule run_diff_exp:
+    input: 
+        counts = join(COUNTS_DIR,'{sample}_count_matrix.txt'),
+        design = join(COUNTS_DIR,'{sample}_design.txt'),
+        #bayes = bayes,
+        #num_genes = num_genes,
+        rFile = 'scripts/diff_exp.R'
+    output: join(ANALYSIS_DIR,'{sample}','{sample}_DE_hits.txt')
+    shell:'Rscript {input.rFile} {input.counts} {input.design} {num_genes} {bayes} {output}'
+
+
+

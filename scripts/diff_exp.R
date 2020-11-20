@@ -40,11 +40,8 @@ args = commandArgs(trailingOnly=T)
 data_path = args[1] #path to counts.txt file
 design_path = args[2] #path to design matrix indicating replicates 
 num_genes = as.numeric(args[3]) #num of top differential genes to display
-output= args[4] #where to save DEG output
-bayes = args[5] #implement bayes DEG or not (Boolean)
-
-print(num_genes)
-class(num_genes)
+bayes = as.logical(args[4]) #implement bayes DEG or not (Boolean)
+output= args[5] #where to save DEG output
 
 data = load_data(data_path)
 design = scan(design_path,sep=',')
